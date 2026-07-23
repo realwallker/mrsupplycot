@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useData } from "./hooks/useData";
 import { exportProducts, exportQuote, importProducts } from "./lib/excel";
+import { exportQuotePdf } from "./lib/pdf";
 import { hasSupabase, supabase } from "./lib/supabase";
 import { emptyProduct, emptyQuote, quoteTotals, type Product, type Quote, type QuoteStatus } from "./types";
 
@@ -111,11 +112,19 @@ function QuotePanel({ quote, onChange, onNew, onLoad, onNotify }: {
   quote: Quote; onChange: (quote: Quote) => void; onNew: () => void; onLoad: (quote: Quote) => void; onNotify: (message: string) => void;
 }) {
   const data = useData();
+  const [pdfBusy, setPdfBusy] = useState(false);
   const totals = quoteTotals(quote);
-  const set = <K extends keyof Quote>(key: K, value: Quote[K]) => onChange({ ...quote, [key]: value });
+  const set = <K extends keyof Quote>(key: K, value: Quote[K]) => onChange({ ...quote, [key]: value, updatedAt: new Date().toISOString() });
   const updateItem = (id: string, patch: Partial<Quote["items"][number]>) => set("items", quote.items.map((item) => item.id === id ? { ...item, ...patch } : item));
   const save = async () => { await data.saveQuote(quote); onNotify("Cotización guardada y sincronizada"); };
   const print = () => window.print();
+  const downloadPdf = async () => {
+    if (!quote.items.length) { onNotify("Agrega al menos un producto antes de descargar"); return; }
+    setPdfBusy(true);
+    try { await exportQuotePdf(quote); onNotify("PDF premium generado"); }
+    catch (error) { onNotify(`No se pudo generar el PDF: ${(error as Error).message}`); }
+    finally { setPdfBusy(false); }
+  };
   return <aside className="quote-panel">
     <header className="quote-panel-header"><div><span className="eyebrow">COTIZACIÓN ACTIVA</span><button className="quote-number" onClick={() => onLoad(quote)}>{quote.number}</button></div><button className="icon-button light" title="Nueva cotización" onClick={onNew}><Plus /></button></header>
     <div className="quote-scroll">
@@ -144,7 +153,7 @@ function QuotePanel({ quote, onChange, onNew, onLoad, onNotify }: {
       </section>
     </div>
     <section className="quote-summary"><div><span>Subtotal</span><strong>{money.format(totals.subtotal)}</strong></div>{totals.discount > 0 && <div><span>Descuento</span><strong>−{money.format(totals.discount)}</strong></div>}<div><span>Impuesto</span><strong>{money.format(totals.tax)}</strong></div><div className="total"><span>Total</span><strong>{money.format(totals.total)}</strong></div>
-      <div className="quote-actions"><button className="button gold" onClick={save}><Save size={16} /> Guardar</button><button className="button dark" onClick={print}><Printer size={16} /></button><button className="button dark" onClick={() => exportQuote(quote)}><FileSpreadsheet size={16} /></button></div>
+      <div className="quote-actions"><button className="button gold" onClick={save}><Save size={16} /> Guardar</button><button className="button pdf-button" disabled={pdfBusy} onClick={downloadPdf}><Download size={16} /> {pdfBusy ? "Creando…" : "PDF"}</button><button className="button dark" title="Imprimir" onClick={print}><Printer size={16} /></button><button className="button dark" title="Exportar Excel" onClick={() => exportQuote(quote)}><FileSpreadsheet size={16} /></button></div>
     </section>
     <div className="print-only"><QuoteDocument quote={quote} /></div>
   </aside>;
@@ -172,7 +181,7 @@ function AppContent() {
   useEffect(() => {
     if (skipAutoSave.current) { skipAutoSave.current = false; return; }
     if (!quote.clientName && quote.items.length === 0) return;
-    const timer = window.setTimeout(() => data.saveQuote(quote).catch(() => undefined), 1200);
+    const timer = window.setTimeout(() => data.saveQuote(quote).catch((error) => setToast(`No se pudo sincronizar: ${error.message}`)), 700);
     return () => clearTimeout(timer);
   }, [quote]);
   useEffect(() => {
@@ -193,8 +202,9 @@ function AppContent() {
 
   const addProduct = (product: Product) => {
     const existing = quote.items.find((item) => item.productId === product.id);
-    if (existing) setQuote({ ...quote, items: quote.items.map((item) => item.id === existing.id ? { ...item, quantity: item.quantity + 1 } : item) });
-    else setQuote({ ...quote, items: [...quote.items, { id: crypto.randomUUID(), productId: product.id, sku: product.sku, name: product.name, presentation: product.presentation, imageUrl: product.imageUrl, quantity: 1, unitPrice: product.pvp, discount: 0 }] });
+    const updatedAt = new Date().toISOString();
+    if (existing) setQuote({ ...quote, updatedAt, items: quote.items.map((item) => item.id === existing.id ? { ...item, quantity: item.quantity + 1 } : item) });
+    else setQuote({ ...quote, updatedAt, items: [...quote.items, { id: crypto.randomUUID(), productId: product.id, sku: product.sku, name: product.name, presentation: product.presentation, imageUrl: product.imageUrl, quantity: 1, unitPrice: product.pvp, discount: 0 }] });
     setToast(`${product.name} agregado`);
   };
   const newQuote = () => setQuote(emptyQuote(data.quotes.length + 1));

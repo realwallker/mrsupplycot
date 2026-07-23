@@ -52,6 +52,8 @@ class DataService {
   online = hasSupabase;
   private listeners = new Set<Listener>();
   private initialized = false;
+  private remoteMutationDepth = 0;
+  private remoteReloadTimer: number | null = null;
   private channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("mrsupply-sync") : null;
 
   constructor() {
@@ -66,6 +68,26 @@ class DataService {
 
   private emit() { this.listeners.forEach((listener) => listener()); }
   private broadcast() { this.channel?.postMessage({ at: Date.now() }); }
+  private scheduleRemoteReload(delay = 320) {
+    if (!supabase) return;
+    if (this.remoteReloadTimer !== null) window.clearTimeout(this.remoteReloadTimer);
+    this.remoteReloadTimer = window.setTimeout(() => {
+      this.remoteReloadTimer = null;
+      if (this.remoteMutationDepth > 0) { this.scheduleRemoteReload(delay); return; }
+      void this.reloadRemote();
+    }, delay);
+  }
+
+  private async runRemoteMutation(action: () => Promise<void>) {
+    this.remoteMutationDepth += 1;
+    try { await action(); }
+    finally { this.remoteMutationDepth -= 1; }
+    if (this.remoteReloadTimer !== null) {
+      window.clearTimeout(this.remoteReloadTimer);
+      this.remoteReloadTimer = null;
+    }
+    await this.reloadRemote();
+  }
 
   private reloadLocal() {
     if (hasSupabase) return;
@@ -86,9 +108,9 @@ class DataService {
     await this.reloadRemote();
     if (this.products.length === 0) await this.importProducts(seedProducts as Product[]);
     supabase.channel("mr-supply-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => this.reloadRemote())
-      .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, () => this.reloadRemote())
-      .on("postgres_changes", { event: "*", schema: "public", table: "quote_items" }, () => this.reloadRemote())
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => this.scheduleRemoteReload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, () => this.scheduleRemoteReload())
+      .on("postgres_changes", { event: "*", schema: "public", table: "quote_items" }, () => this.scheduleRemoteReload())
       .subscribe();
   }
 
@@ -109,9 +131,11 @@ class DataService {
   async saveProduct(product: Product) {
     const value = { ...product, updatedAt: new Date().toISOString() };
     if (supabase) {
-      const { error } = await supabase.from("products").upsert(productToDb(value));
-      if (error) throw error;
-      await this.reloadRemote();
+      const client = supabase;
+      await this.runRemoteMutation(async () => {
+        const { error } = await client.from("products").upsert(productToDb(value));
+        if (error) throw error;
+      });
       return;
     }
     const index = this.products.findIndex((item) => item.id === value.id || (value.sku && item.sku === value.sku));
@@ -121,13 +145,15 @@ class DataService {
 
   async importProducts(products: Product[]) {
     if (supabase) {
-      const { data: existing, error: lookupError } = await supabase.from("products").select("id,sku");
-      if (lookupError) throw lookupError;
-      const idsBySku = new Map((existing ?? []).filter((item) => item.sku).map((item) => [item.sku, item.id]));
-      const safeProducts = products.map((product) => ({ ...product, id: idsBySku.get(product.sku) ?? product.id }));
-      const { error } = await supabase.from("products").upsert(safeProducts.map(productToDb), { onConflict: "sku" });
-      if (error) throw error;
-      await this.reloadRemote();
+      const client = supabase;
+      await this.runRemoteMutation(async () => {
+        const { data: existing, error: lookupError } = await client.from("products").select("id,sku");
+        if (lookupError) throw lookupError;
+        const idsBySku = new Map((existing ?? []).filter((item) => item.sku).map((item) => [item.sku, item.id]));
+        const safeProducts = products.map((product) => ({ ...product, id: idsBySku.get(product.sku) ?? product.id }));
+        const { error } = await client.from("products").upsert(safeProducts.map(productToDb), { onConflict: "sku" });
+        if (error) throw error;
+      });
       return;
     }
     const next = [...this.products];
@@ -139,7 +165,7 @@ class DataService {
   }
 
   async deleteProduct(id: string) {
-    if (supabase) { const { error } = await supabase.from("products").delete().eq("id", id); if (error) throw error; await this.reloadRemote(); return; }
+    if (supabase) { const client = supabase; await this.runRemoteMutation(async () => { const { error } = await client.from("products").delete().eq("id", id); if (error) throw error; }); return; }
     this.products = this.products.filter((item) => item.id !== id);
     localStorage.setItem(PRODUCTS_KEY, JSON.stringify(this.products)); this.emit(); this.broadcast();
   }
@@ -147,25 +173,29 @@ class DataService {
   async saveQuote(quote: Quote) {
     const value = { ...quote, createdBy: quote.createdBy || this.user.name, updatedAt: new Date().toISOString() };
     if (supabase) {
-      const { items, ...base } = value;
-      const { error } = await supabase.from("quotes").upsert({
-        id: base.id, number: base.number, client_name: base.clientName, client_id: base.clientId,
-        client_phone: base.clientPhone, client_email: base.clientEmail, issued_at: base.issuedAt,
-        valid_until: base.validUntil, status: base.status, tax_rate: base.taxRate,
-        global_discount: base.globalDiscount, notes: base.notes, created_by: this.user.id,
-        updated_at: base.updatedAt,
+      const client = supabase;
+      await this.runRemoteMutation(async () => {
+        const { items, ...base } = value;
+        const { error } = await client.from("quotes").upsert({
+          id: base.id, number: base.number, client_name: base.clientName, client_id: base.clientId,
+          client_phone: base.clientPhone, client_email: base.clientEmail, issued_at: base.issuedAt,
+          valid_until: base.validUntil, status: base.status, tax_rate: base.taxRate,
+          global_discount: base.globalDiscount, notes: base.notes, created_by: this.user.id,
+          updated_at: base.updatedAt,
+        });
+        if (error) throw error;
+        const { error: deleteError } = await client.from("quote_items").delete().eq("quote_id", value.id);
+        if (deleteError) throw deleteError;
+        if (items.length) {
+          const { error: itemError } = await client.from("quote_items").insert(items.map((item, position) => ({
+            id: item.id, quote_id: value.id, product_id: item.productId || null, sku: item.sku,
+            name: item.name, presentation: item.presentation, image_url: item.imageUrl,
+            quantity: item.quantity, unit_price: item.unitPrice, discount: item.discount, position,
+          })));
+          if (itemError) throw itemError;
+        }
       });
-      if (error) throw error;
-      await supabase.from("quote_items").delete().eq("quote_id", value.id);
-      if (items.length) {
-        const { error: itemError } = await supabase.from("quote_items").insert(items.map((item, position) => ({
-          id: item.id, quote_id: value.id, product_id: item.productId || null, sku: item.sku,
-          name: item.name, presentation: item.presentation, image_url: item.imageUrl,
-          quantity: item.quantity, unit_price: item.unitPrice, discount: item.discount, position,
-        })));
-        if (itemError) throw itemError;
-      }
-      await this.reloadRemote(); return;
+      return;
     }
     const index = this.quotes.findIndex((item) => item.id === value.id);
     if (index >= 0) this.quotes[index] = value; else this.quotes.unshift(value);
@@ -173,7 +203,7 @@ class DataService {
   }
 
   async deleteQuote(id: string) {
-    if (supabase) { const { error } = await supabase.from("quotes").delete().eq("id", id); if (error) throw error; await this.reloadRemote(); return; }
+    if (supabase) { const client = supabase; await this.runRemoteMutation(async () => { const { error } = await client.from("quotes").delete().eq("id", id); if (error) throw error; }); return; }
     this.quotes = this.quotes.filter((quote) => quote.id !== id);
     localStorage.setItem(QUOTES_KEY, JSON.stringify(this.quotes)); this.emit(); this.broadcast();
   }
