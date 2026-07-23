@@ -107,11 +107,24 @@ class DataService {
     };
     await this.reloadRemote();
     if (this.products.length === 0) await this.importProducts(seedProducts as Product[]);
+    if (auth.user) await this.syncSeedImages();
     supabase.channel("mr-supply-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => this.scheduleRemoteReload())
       .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, () => this.scheduleRemoteReload())
       .on("postgres_changes", { event: "*", schema: "public", table: "quote_items" }, () => this.scheduleRemoteReload())
       .subscribe();
+  }
+
+  private async syncSeedImages() {
+    if (!supabase) return;
+    const seededBySku = new Map((seedProducts as Product[]).filter((product) => product.sku && product.imageUrl).map((product) => [product.sku, product.imageUrl]));
+    const updates = this.products
+      .filter((product) => !product.imageUrl && seededBySku.has(product.sku))
+      .map((product) => ({ ...product, imageUrl: seededBySku.get(product.sku) ?? "" }));
+    if (!updates.length) return;
+    const { error } = await supabase.from("products").upsert(updates.map(productToDb), { onConflict: "sku" });
+    if (error) throw error;
+    await this.reloadRemote();
   }
 
   private async reloadRemote() {

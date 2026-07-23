@@ -9,7 +9,7 @@ const { chromium } = require("C:/Users/Marceram03/.cache/codex-runtimes/codex-pr
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
-  await page.goto("http://127.0.0.1:4173", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:4173", { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".product-card");
   const productsLabel = await page.locator(".catalog-meta").innerText();
   await page.locator(".searchbox input").fill("ALOE VERA");
