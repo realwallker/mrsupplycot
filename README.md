@@ -2,6 +2,12 @@
 
 Aplicación web colaborativa para administrar el catálogo de Mr Supply y crear cotizaciones con PVP. Incluye 443 productos del catálogo depurado, importación/exportación Excel, edición de productos, historial de cotizaciones y documento imprimible premium.
 
+## Producción
+
+- Aplicación: https://cotizadorweb-eight.vercel.app
+- Repositorio: https://github.com/realwallker/mrsupplycot
+- Base de datos y autenticación: Supabase
+
 ## Ejecutar localmente
 
 ```bash
