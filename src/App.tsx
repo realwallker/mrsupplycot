@@ -1,45 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive, BadgeDollarSign, Check, ChevronLeft, ChevronRight, CircleDollarSign,
-  Cloud, CloudOff, Download, FileSpreadsheet, History, LayoutDashboard, LogOut,
-  Menu, Minus, Package, Pencil, Plus, Printer, RotateCcw, Save, Search, Send,
-  Settings2, ShoppingBag, Trash2, Upload, Users, X,
+  Cloud, CloudOff, Download, FileSpreadsheet, History, LayoutDashboard,
+  Menu, Minus, Package, Pencil, Plus, Printer, RotateCcw, Save, Search,
+  ShoppingBag, Trash2, Upload, X,
 } from "lucide-react";
 import { useData } from "./hooks/useData";
 import { exportProducts, exportQuote, importProducts } from "./lib/excel";
 import { exportQuotePdf } from "./lib/pdf";
-import { hasSupabase, supabase } from "./lib/supabase";
 import { emptyProduct, emptyQuote, quoteTotals, type Product, type Quote, type QuoteStatus } from "./types";
 
 type View = "dashboard" | "catalog" | "quotes";
 const money = new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" });
 const shortDate = new Intl.DateTimeFormat("es-EC", { day: "2-digit", month: "short", year: "numeric" });
-
-function Login() {
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!supabase) return;
-    setMessage("Enviando acceso…");
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin, shouldCreateUser: false } });
-    setMessage(error ? error.message : "Revisa tu correo. Te enviamos un enlace de acceso.");
-  };
-  return <main className="login-screen">
-    <section className="login-card">
-      <img src="/mrsupply-logo.png" alt="Mr Supply" />
-      <span className="eyebrow">ESPACIO DE TRABAJO</span>
-      <h1>Cotizaciones premium,<br />sin fricción.</h1>
-      <p>Accede con tu correo autorizado. Los cambios del equipo se sincronizan al instante.</p>
-      <form onSubmit={submit}>
-        <label>Correo electrónico</label>
-        <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@empresa.com" />
-        <button className="button gold" type="submit"><Send size={17} /> Enviar enlace de acceso</button>
-      </form>
-      {message && <div className="login-message">{message}</div>}
-    </section>
-  </main>;
-}
 
 function ProductImage({ product }: { product: Product }) {
   const [failed, setFailed] = useState(false);
@@ -230,7 +203,7 @@ function AppContent() {
       <button className={view === "quotes" ? "active" : ""} onClick={() => { setView("quotes"); setMobileMenu(false); }}><History /> Cotizaciones <span>{data.quotes.length}</span></button>
       <div className="sidebar-spacer" />
       <div className="sync-card">{data.online ? <Cloud /> : <CloudOff />}<div><strong>{data.online ? "Sincronización activa" : "Modo local"}</strong><span>{data.online ? "Cambios en tiempo real" : "Conecta Supabase para colaborar"}</span></div></div>
-      <div className="user-card"><div className="avatar">{data.user.name.slice(0, 2).toUpperCase()}</div><div><strong>{data.user.name}</strong><span>{data.user.email}</span></div>{data.online && <button onClick={() => supabase?.auth.signOut().then(() => location.reload())}><LogOut /></button>}</div>
+      <div className="user-card"><div className="avatar">MS</div><div><strong>Mr Supply</strong><span>Acceso directo por enlace</span></div></div>
     </nav>
     {mobileMenu && <div className="menu-shade" onClick={() => setMobileMenu(false)} />}
     <main className="workspace">
@@ -265,15 +238,5 @@ function QuoteRows({ quotes, onOpen, detailed = false, onDelete }: { quotes: Quo
 }
 
 export default function App() {
-  const [sessionChecked, setSessionChecked] = useState(!hasSupabase);
-  const [authenticated, setAuthenticated] = useState(!hasSupabase);
-  useEffect(() => {
-    if (!supabase) return;
-    supabase.auth.getSession().then(({ data }) => { setAuthenticated(Boolean(data.session)); setSessionChecked(true); });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => setAuthenticated(Boolean(session)));
-    return () => data.subscription.unsubscribe();
-  }, []);
-  if (!sessionChecked) return <div className="loading"><img src="/mrsupply-logo.png" /><span>Verificando acceso…</span></div>;
-  if (!authenticated) return <Login />;
   return <AppContent />;
 }

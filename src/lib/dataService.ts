@@ -48,7 +48,7 @@ const quoteFromDb = (row: Record<string, unknown>, items: Record<string, unknown
 class DataService {
   products: Product[] = [];
   quotes: Quote[] = [];
-  user: AppUser = { id: "local", email: "demo@mrsupply.local", name: "Administrador" };
+  user: AppUser = { id: "public", email: "Acceso por enlace", name: "Mr Supply" };
   ready = false;
   online = hasSupabase;
   private listeners = new Set<Listener>();
@@ -108,7 +108,7 @@ class DataService {
     };
     await this.reloadRemote();
     if (this.products.length === 0) await this.importProducts(seedProducts as Product[]);
-    if (auth.user) await this.syncSeedImages();
+    await this.syncSeedImages();
     supabase.channel("mr-supply-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => this.scheduleRemoteReload())
       .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, () => this.scheduleRemoteReload())
@@ -196,7 +196,7 @@ class DataService {
           id: base.id, number: base.number, client_name: base.clientName, client_id: base.clientId,
           client_phone: base.clientPhone, client_email: base.clientEmail, issued_at: base.issuedAt,
           valid_until: base.validUntil, status: base.status, tax_rate: base.taxRate,
-          global_discount: base.globalDiscount, notes: base.notes, created_by: this.user.id,
+          global_discount: base.globalDiscount, notes: base.notes, created_by: this.user.id === "public" ? null : this.user.id,
           updated_at: base.updatedAt,
         });
         if (error) throw error;

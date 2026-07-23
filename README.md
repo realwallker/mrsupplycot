@@ -6,7 +6,7 @@ Aplicación web colaborativa para administrar el catálogo de Mr Supply y crear 
 
 - Aplicación: https://cotizadorweb-eight.vercel.app
 - Repositorio: https://github.com/realwallker/mrsupplycot
-- Base de datos y autenticación: Supabase
+- Base de datos y sincronización: Supabase
 
 ## Ejecutar localmente
 
@@ -25,11 +25,11 @@ Sin variables de entorno la aplicación funciona en modo demostración: guarda e
 4. Copia `.env.example` a `.env.local` y completa `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 5. Reinicia la aplicación. El primer usuario autenticado cargará automáticamente el catálogo inicial.
 
-Todos los usuarios autenticados comparten productos y cotizaciones. Las tablas están protegidas mediante RLS y los cambios se distribuyen con Supabase Realtime.
+El enlace abre directamente el cotizador sin inicio de sesión. Productos y cotizaciones se comparten mediante Supabase Realtime. La migración `002_public_link_access.sql` habilita el acceso anónimo de lectura y escritura necesario para este modo privado-por-enlace.
 
 ## Desplegar
 
-Importa este repositorio en Vercel, configura las dos variables `VITE_SUPABASE_*` y despliega con los valores predeterminados de Vite (`npm run build`, salida `dist`). Añade el dominio final como Redirect URL en Supabase Authentication.
+Importa este repositorio en Vercel, configura las dos variables `VITE_SUPABASE_*` y despliega con los valores predeterminados de Vite (`npm run build`, salida `dist`).
 
 ## Excel
 
