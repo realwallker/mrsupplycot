@@ -5,6 +5,7 @@ import { hasSupabase, supabase } from "./supabase";
 type Listener = () => void;
 const PRODUCTS_KEY = "mrsupply.products.v1";
 const QUOTES_KEY = "mrsupply.quotes.v1";
+const seededImageBySku = new Map((seedProducts as Product[]).filter((product) => product.sku && product.imageUrl).map((product) => [product.sku, product.imageUrl]));
 
 const productFromDb = (row: Record<string, unknown>): Product => ({
   id: String(row.id), sourceId: Number(row.source_id ?? 0), sku: String(row.sku ?? ""),
@@ -14,7 +15,7 @@ const productFromDb = (row: Record<string, unknown>): Product => ({
   content: String(row.content ?? ""), unit: String(row.unit ?? ""), flavor: String(row.flavor ?? ""),
   format: String(row.format ?? ""), cost: Number(row.cost ?? 0), pvp: Number(row.pvp ?? 0),
   supplier: String(row.supplier ?? ""), status: String(row.status ?? "Activo"),
-  imageUrl: String(row.image_url ?? ""), stock: String(row.stock ?? ""),
+  imageUrl: String(row.image_url ?? "") || seededImageBySku.get(String(row.sku ?? "")) || "", stock: String(row.stock ?? ""),
   deliveryDays: Number(row.delivery_days ?? 0), notes: String(row.notes ?? ""),
   updatedAt: String(row.updated_at ?? new Date().toISOString()),
 });
@@ -117,10 +118,12 @@ class DataService {
 
   private async syncSeedImages() {
     if (!supabase) return;
-    const seededBySku = new Map((seedProducts as Product[]).filter((product) => product.sku && product.imageUrl).map((product) => [product.sku, product.imageUrl]));
+    const { data: storedProducts, error: lookupError } = await supabase.from("products").select("sku,image_url");
+    if (lookupError) throw lookupError;
+    const missingSkus = new Set((storedProducts ?? []).filter((product) => product.sku && !product.image_url && seededImageBySku.has(product.sku)).map((product) => product.sku));
     const updates = this.products
-      .filter((product) => !product.imageUrl && seededBySku.has(product.sku))
-      .map((product) => ({ ...product, imageUrl: seededBySku.get(product.sku) ?? "" }));
+      .filter((product) => missingSkus.has(product.sku))
+      .map((product) => ({ ...product, imageUrl: seededImageBySku.get(product.sku) ?? "" }));
     if (!updates.length) return;
     const { error } = await supabase.from("products").upsert(updates.map(productToDb), { onConflict: "sku" });
     if (error) throw error;
