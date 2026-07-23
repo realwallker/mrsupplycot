@@ -81,8 +81,9 @@ function QuoteDocument({ quote }: { quote: Quote }) {
   </article>;
 }
 
-function QuotePanel({ quote, onChange, onNew, onLoad, onNotify }: {
+function QuotePanel({ quote, onChange, onNew, onLoad, onNotify, mobileOpen, onMobileClose }: {
   quote: Quote; onChange: (quote: Quote) => void; onNew: () => void; onLoad: (quote: Quote) => void; onNotify: (message: string) => void;
+  mobileOpen: boolean; onMobileClose: () => void;
 }) {
   const data = useData();
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -98,8 +99,8 @@ function QuotePanel({ quote, onChange, onNew, onLoad, onNotify }: {
     catch (error) { onNotify(`No se pudo generar el PDF: ${(error as Error).message}`); }
     finally { setPdfBusy(false); }
   };
-  return <aside className="quote-panel">
-    <header className="quote-panel-header"><div><span className="eyebrow">COTIZACIÓN ACTIVA</span><button className="quote-number" onClick={() => onLoad(quote)}>{quote.number}</button></div><button className="icon-button light" title="Nueva cotización" onClick={onNew}><Plus /></button></header>
+  return <aside className={`quote-panel ${mobileOpen ? "mobile-open" : ""}`}>
+    <header className="quote-panel-header"><div><span className="eyebrow">COTIZACIÓN ACTIVA</span><button className="quote-number" onClick={() => onLoad(quote)}>{quote.number}</button></div><div className="quote-header-actions"><button className="icon-button light" title="Nueva cotización" onClick={onNew}><Plus /></button><button className="icon-button light mobile-quote-close" title="Cerrar cotización" onClick={onMobileClose}><X /></button></div></header>
     <div className="quote-scroll">
       <section className="client-fields">
         <label>Cliente<input value={quote.clientName} onChange={(e) => set("clientName", e.target.value)} placeholder="Nombre o empresa" /></label>
@@ -141,6 +142,7 @@ function AppContent() {
   const [quote, setQuote] = useState(() => emptyQuote(1));
   const [editing, setEditing] = useState<Product | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [mobileQuoteOpen, setMobileQuoteOpen] = useState(false);
   const [toast, setToast] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
   const skipAutoSave = useRef(false);
@@ -178,6 +180,7 @@ function AppContent() {
     const updatedAt = new Date().toISOString();
     if (existing) setQuote({ ...quote, updatedAt, items: quote.items.map((item) => item.id === existing.id ? { ...item, quantity: item.quantity + 1 } : item) });
     else setQuote({ ...quote, updatedAt, items: [...quote.items, { id: crypto.randomUUID(), productId: product.id, sku: product.sku, name: product.name, presentation: product.presentation, imageUrl: product.imageUrl, quantity: 1, unitPrice: product.pvp, discount: 0 }] });
+    if (window.matchMedia("(max-width: 1120px)").matches) setMobileQuoteOpen(true);
     setToast(`${product.name} agregado`);
   };
   const newQuote = () => setQuote(emptyQuote(data.quotes.length + 1));
@@ -226,7 +229,11 @@ function AppContent() {
       {view === "quotes" && <div className="page quotes-page"><section className="quotes-header"><div><span className="eyebrow">HISTORIAL COMPARTIDO</span><h2>{data.quotes.length} cotizaciones</h2></div><button className="button gold" onClick={() => { newQuote(); setView("catalog"); }}><Plus /> Crear cotización</button></section><div className="panel quotes-table"><QuoteRows quotes={data.quotes} onOpen={(item) => { setQuote(item); setView("catalog"); }} detailed onDelete={(id) => data.deleteQuote(id)} /></div></div>}
       <input ref={importRef} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(e) => handleImport(e.target.files?.[0])} />
     </main>
-    <QuotePanel quote={quote} onChange={setQuote} onNew={newQuote} onLoad={setQuote} onNotify={setToast} />
+    <button className="mobile-quote-trigger" onClick={() => setMobileQuoteOpen(true)} aria-label="Abrir cotización">
+      <ShoppingBag /><span><small>Cotización</small><strong>{money.format(quoteTotals(quote).total)}</strong></span><b>{quote.items.length}</b>
+    </button>
+    <button className={`quote-shade ${mobileQuoteOpen ? "visible" : ""}`} onClick={() => setMobileQuoteOpen(false)} aria-label="Cerrar cotización" />
+    <QuotePanel quote={quote} onChange={setQuote} onNew={newQuote} onLoad={setQuote} onNotify={setToast} mobileOpen={mobileQuoteOpen} onMobileClose={() => setMobileQuoteOpen(false)} />
     {editing && <ProductModal product={editing} onClose={() => setEditing(null)} onSave={(product) => data.saveProduct(product).then(() => setToast("Producto guardado y sincronizado"))} onDelete={editing.name ? async () => { if (confirm(`¿Eliminar ${editing.name}?`)) { await data.deleteProduct(editing.id); setEditing(null); setToast("Producto eliminado"); } } : undefined} />}
     {toast && <div className="toast"><Check />{toast}</div>}
   </div>;
